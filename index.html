@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Commerce triangulaire - Carte interactive</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            touch-action: manipulation;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background: #ececec;
+            margin: 0;
+            padding: 15px;
+            color: #333;
+        }
+
+        h1 {
+            text-align: center;
+            margin: 0 0 15px 0;
+            font-size: 1.6rem;
+        }
+
+        #jeu {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+            justify-content: center;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        #carte {
+            position: relative;
+            width: 100%;
+            max-width: 900px;
+            background: #aad3df;
+            border: 3px solid #444;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.15);
+            touch-action: none;
+        }
+
+        #carte > img, #carte > svg {
+            width: 100%;
+            height: auto;
+            display: block;
+            pointer-events: none;
+            user-select: none;
+        }
+
+        /* =========================================================
+           ENCARTS SUR LA CARTE (ZONES DROP)
+           ========================================================= */
+        .zone {
+            position: absolute;
+            border: 2px dashed #555;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            font-weight: bold;
+            font-size: 0.85rem;
+            z-index: 10;
+            user-select: none;
+            transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+            background: rgba(255, 255, 255, 0.5);
+            transform-origin: center center;
+        }
+
+        .zone-title {
+            position: relative;
+            z-index: 2;
+            padding: 2px 6px;
+            background: rgba(255, 255, 255, 0.85);
+            border-radius: 4px;
+            pointer-events: none;
+            max-width: 95%;
+            word-break: break-word;
+        }
+
+        .zone.drag-over {
+            border-style: solid !important;
+            box-shadow: 0 0 12px rgba(255, 235, 59, 0.9);
+        }
+
+        .zone.correct {
+            border-style: solid !important;
+            box-shadow: 0 0 8px rgba(76, 175, 80, 0.8);
+            background: rgba(200, 230, 201, 0.8) !important;
+        }
+
+        .mode-prof .zone {
+            cursor: move;
+        }
+
+        .zone-images {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 3px;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            height: 100%;
+            padding: 2px;
+            pointer-events: none;
+        }
+
+        .zone-image {
+            max-width: 45%;
+            max-height: 45%;
+            object-fit: contain;
+            background: white;
+            border: 1px solid rgba(0,0,0,0.2);
+            border-radius: 4px;
+            padding: 1px;
+        }
+
+        /* =========================================================
+           POIGNÉES D'ÉDITION PROFESSEUR (RESIZE + ROTATE)
+           ========================================================= */
+        .resize-handle {
+            position: absolute;
+            right: -6px;
+            bottom: -6px;
+            width: 14px;
+            height: 14px;
+            background: #e65100;
+            border: 2px solid white;
+            border-radius: 3px;
+            cursor: nwse-resize;
+            z-index: 30;
+        }
+
+        .rotate-handle {
+            position: absolute;
+            top: -22px;
+            left: calc(50% - 7px);
+            width: 14px;
+            height: 14px;
+            background: #2196f3;
+            border: 2px solid white;
+            border-radius: 50%;
+            cursor: grab;
+            z-index: 30;
+        }
+
+        .rotate-handle::after {
+            content: '';
+            position: absolute;
+            top: 12px;
+            left: 4px;
+            width: 2px;
+            height: 8px;
+            background: #2196f3;
+        }
+
+        /* =========================================================
+           LIAISONS (FLÈCHES)
+           ========================================================= */
+        .liaison {
+            position: absolute;
+            height: 8px;
+            background: #d32f2f;
+            border-radius: 4px;
+            z-index: 5;
+            transform-origin: 0% 50%;
+            pointer-events: none;
+        }
+
+        .liaison::after {
+            content: '';
+            position: absolute;
+            right: -8px;
+            top: -4px;
+            width: 0;
+            height: 0;
+            border-top: 8px solid transparent;
+            border-bottom: 8px solid transparent;
+            border-left: 12px solid #d32f2f;
+        }
+
+        .mode-prof .liaison {
+            pointer-events: auto;
+            background: #e65100;
+            cursor: move;
+        }
+
+        .mode-prof .liaison::after {
+            border-left-color: #e65100;
+        }
+
+        .handle-endpoint {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            background: #ff9800;
+            border: 2px solid white;
+            border-radius: 50%;
+            top: -4px;
+            cursor: pointer;
+            z-index: 40;
+            box-shadow: 0 0 4px rgba(0,0,0,0.4);
+        }
+
+        .handle-start { left: -8px; }
+        .handle-end { right: -8px; }
+
+        /* =========================================================
+           PANNEAU DROITE ET ÉTIQUETTES
+           ========================================================= */
+        #liste {
+            width: 280px;
+            min-width: 280px;
+            background: white;
+            border-radius: 12px;
+            padding: 15px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+            position: sticky;
+            top: 15px;
+        }
+
+        #liste h2 {
+            margin: 0 0 10px 0;
+            text-align: center;
+            font-size: 1.2rem;
+        }
+
+        .compteur {
+            text-align: center;
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-bottom: 12px;
+            color: #1565c0;
+        }
+
+        #etiquettes {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            min-height: 100px;
+        }
+
+        .etiquette {
+            padding: 10px 12px;
+            background: #1e88e5;
+            color: white;
+            border-radius: 8px;
+            cursor: grab;
+            user-select: none;
+            text-align: center;
+            font-weight: bold;
+            font-size: 0.9rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+            touch-action: none;
+            transition: transform 0.1s, opacity 0.2s;
+        }
+
+        .etiquette:active {
+            cursor: grabbing;
+            opacity: 0.8;
+        }
+
+        .etiquette.dragging {
+            opacity: 0.4;
+        }
+
+        .image-etiquette {
+            background: #7b1fa2 !important;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            text-align: left;
+        }
+
+        .image-etiquette img {
+            width: 40px;
+            height: 40px;
+            object-fit: contain;
+            background: white;
+            border-radius: 4px;
+            padding: 2px;
+        }
+
+        #message {
+            margin-top: 15px;
+            font-size: 1.1rem;
+            font-weight: bold;
+            text-align: center;
+            color: #2e7d32;
+        }
+
+        button {
+            width: 100%;
+            padding: 10px 12px;
+            margin-top: 8px;
+            font-size: 0.9rem;
+            font-weight: bold;
+            cursor: pointer;
+            border: none;
+            background: #424242;
+            color: white;
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+
+        button:hover { background: #212121; }
+        button.btn-danger { background: #c62828; }
+        button.btn-danger:hover { background: #b71c1c; }
+        button.btn-success { background: #2e7d32; }
+        button.btn-success:hover { background: #1b5e20; }
+        button.btn-export { background: #673ab7; }
+        button.btn-export:hover { background: #512da8; }
+
+        #professeur {
+            display: none;
+            max-width: 1400px;
+            margin: 20px auto 0;
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        }
+
+        .prof-group {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+            background: #fafafa;
+        }
+
+        .prof-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .prof-row input[type="text"], .prof-row select {
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            flex: 1;
+        }
+
+        .prof-row input[type="color"] {
+            width: 40px;
+            height: 35px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .ordre-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 8px 12px;
+            margin: 5px 0;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+        }
+
+        @media (max-width: 900px) {
+            #jeu {
+                flex-direction: column;
+                align-items: center;
+            }
+            #carte { max-width: 100%; }
+            #liste {
+                width: 100%;
+                min-width: 0;
+                position: static;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+<h1>Le commerce triangulaire — Carte interactive</h1>
+
+<div id="jeu">
+    <div id="carte">
+        <img src="carte-vierge.png" id="map-img" alt="Carte du Commerce Triangulaire" onerror="afficherCarteFallback()">
+    </div>
+
+    <div id="liste">
+        <h2>À placer</h2>
+        <div class="compteur">
+            Score : <span id="score">0</span> / <span id="total">0</span>
+        </div>
+        <div id="etiquettes"></div>
+        <button type="button" onclick="resetGame()">🔄 Réinitialiser la partie</button>
+        <button type="button" id="btn-prof" onclick="ouvrirProfesseur()">⚙️ Mode Professeur</button>
+        <button type="button" id="btn-eleve" style="display:none;" onclick="revenirModeEleve()">👤 Mode Élève</button>
+        <div id="message"></div>
+    </div>
+</div>
+
+<div id="professeur">
+    <h2>⚙️ Configuration Professeur</h2>
+
+    <div class="prof-group">
+        <h3>🎯 Encarts / Zones sur la carte (Pays, Plantations, Couleurs)</h3>
+        <div id="gestionZones"></div>
+        <button type="button" class="btn-success" onclick="ajouterZone()">➕ Ajouter une zone (encart)</button>
+    </div>
+
+    <div class="prof-group">
+        <h3>➡️ Lignes et Flèches directionnelles</h3>
+        <p style="font-size:0.85rem; color:#666;">Déplacez directement le corps de la flèche sur la carte ou attrapez les poignées orange aux extrémités pour régler le pivot.</p>
+        <button type="button" class="btn-success" onclick="ajouterLiaison()">➕ Ajouter une flèche</button>
+    </div>
+
+    <div class="prof-group">
+        <h3>📝 Étiquettes texte à placer</h3>
+        <div id="gestionElements"></div>
+        <button type="button" class="btn-success" onclick="ajouterElementTexte()">➕ Ajouter une étiquette texte</button>
+    </div>
+
+    <div class="prof-group">
+        <h3>🖼️ Images complémentaires à placer</h3>
+        <div id="gestionImages"></div>
+        <input type="file" id="inputImages" accept="image/*" multiple style="display:none;" onchange="importerImagesFichiers(this.files)">
+        <button type="button" onclick="document.getElementById('inputImages').click()">📂 Importer des images</button>
+    </div>
+
+    <div class="prof-group">
+        <h3>↕️ Ordre d'affichage des étiquettes</h3>
+        <div id="gestionOrdre"></div>
+    </div>
+
+    <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:20px;">
+        <button type="button" class="btn-export" onclick="exporterCodeSource()" style="flex:2;">📋 Exporter le code HTML complet (pour GitHub)</button>
+        <button type="button" class="btn-success" onclick="sauvegarderEtFermer()" style="flex:2;">💾 Enregistrer &amp; Fermer</button>
+        <button type="button" class="btn-danger" onclick="resetConfiguration()" style="flex:1;">⚠️ Réinitialiser</button>
+    </div>
+</div>
+
+<script>
+function afficherCarteFallback() {
+    const conteneur = document.getElementById("carte");
+    const img = document.getElementById("map-img");
+    if (img) img.remove();
+    if (!document.getElementById("map-svg")) {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("id", "map-svg");
+        svg.setAttribute("viewBox", "0 0 900 600");
+        svg.innerHTML = `
+            <rect width="900" height="600" fill="#aad3df"/>
+            <path d="M 50 100 Q 150 80 250 150 Q 200 300 280 400 Q 200 550 100 500 Q 50 350 50 100 Z" fill="#c8e6c9" stroke="#2e7d32" stroke-width="2"/>
+            <path d="M 520 80 Q 680 50 750 120 Q 650 220 550 180 Z" fill="#ffecb3" stroke="#ffa000" stroke-width="2"/>
+            <path d="M 500 220 Q 720 200 750 320 Q 680 520 520 500 Q 450 380 500 220 Z" fill="#ffe0b2" stroke="#f57c00" stroke-width="2"/>
+        `;
+        conteneur.insertBefore(svg, conteneur.firstChild);
+    }
+}
+
+const CONFIG_DEFAUT = {
+    elements: [
+        { nom: "Europe", reponse: "Europe" },
+        { nom: "Afrique", reponse: "Afrique" },
+        { nom: "Amérique", reponse: "Amérique" },
+        { nom: "Océan Atlantique", reponse: "Océan Atlantique" },
+        { nom: "Produits exotiques", reponse: "Produits exotiques" },
+        { nom: "Armes, alcool, objets", reponse: "Armes, alcool, objets" },
+        { nom: "Captifs africains", reponse: "Captifs africains" }
+    ],
+    zones: [
+        { id: "z1", reponse: "Europe", top: 10, left: 66, width: 20, height: 10, rotation: 0, couleur: "#ffffff" },
+        { id: "z2", reponse: "Afrique", top: 40, left: 55, width: 22, height: 12, rotation: 0, couleur: "#ffffff" },
+        { id: "z3", reponse: "Amérique", top: 40, left: 5, width: 23, height: 12, rotation: 0, couleur: "#ffffff" },
+        { id: "z4", reponse: "Océan Atlantique", top: 30, left: 35, width: 20, height: 10, rotation: 0, couleur: "#ffffff" },
+        { id: "z5", reponse: "Produits exotiques", top: 15, left: 35, width: 24, height: 12, rotation: 0, couleur: "#ffffff" },
+        { id: "z6", reponse: "Armes, alcool, objets", top: 22, left: 65, width: 22, height: 12, rotation: 0, couleur: "#ffffff" },
+        { id: "z7", reponse: "Captifs africains", top: 60, left: 40, width: 24, height: 14, rotation: 0, couleur: "#ffffff" }
+    ],
+    liaisons: [
+        { x1: 65, y1: 20, x2: 35, y2: 20 },
+        { x1: 75, y1: 22, x2: 65, y2: 40 },
+        { x1: 55, y1: 52, x2: 28, y2: 45 }
+    ],
+    images: [],
+    ordreItems: []
+};
+
+let config = {};
+
+function chargerConfiguration() {
+    try {
+        const saved = localStorage.getItem("commerceTriangulaireConfig");
+        config = saved ? JSON.parse(saved) : JSON.parse(JSON.stringify(CONFIG_DEFAUT));
+    } catch(e) {
+        config = JSON.parse(JSON.stringify(CONFIG_DEFAUT));
+    }
+    nettoyerEtSynchroOrdre();
+}
+
+function nettoyerEtSynchroOrdre() {
+    if (!Array.isArray(config.ordreItems)) config.ordreItems = [];
+    
+    config.elements.forEach(el => {
+        const ref = "texte:" + el.nom;
+        if (!config.ordreItems.includes(ref)) config.ordreItems.push(ref);
+    });
+    config.images.forEach(img => {
+        const ref = "image:" + img.id;
+        if (!config.ordreItems.includes(ref)) config.ordreItems.push(ref);
+    });
+
+    config.ordreItems = config.ordreItems.filter(ref => {
+        const [type, val] = ref.split(":");
+        if (type === "texte") return config.elements.some(e => e.nom === val);
+        if (type === "image") return config.images.some(i => i.id === val);
+        return false;
+    });
+}
+
+function sauvegarderLocale() {
+    try {
+        localStorage.setItem("commerceTriangulaireConfig", JSON.stringify(config));
+    } catch(e) {
+        console.warn("Stockage local indisponible.");
+    }
+}
+
+let score = 0;
+const carte = document.getElementById("carte");
+const conteneurEtiquettes = document.getElementById("etiquettes");
+
+function initJeu() {
+    score = 0;
+    document.getElementById("score").textContent = "0";
+    document.getElementById("message").textContent = "";
+    
+    config.images.forEach(img => img.placee = false);
+
+    creerZonesDOM();
+    creerEtiquettesDOM();
+}
+
+function hexToRgba(hex, alpha = 0.5) {
+    if(!hex) return `rgba(255, 255, 255, ${alpha})`;
+    let c = hex.replace('#', '');
+    if (c.length === 3) c = c.split('').map(x => x + x).join('');
+    const num = parseInt(c, 16);
+    return `rgba(${(num >> 16) & 255}, ${(num >> 8) & 255}, ${num & 255}, ${alpha})`;
+}
+
+function creerZonesDOM() {
+    carte.querySelectorAll(".zone, .liaison").forEach(el => el.remove());
+
+    config.liaisons.forEach((l, idx) => {
+        const el = document.createElement("div");
+        el.className = "liaison";
+        el.dataset.idx = idx;
+
+        positionnerLigne(el, l.x1, l.y1, l.x2, l.y2);
+
+        if (estModeProf()) rendreLiaisonEditable(el, l);
+        carte.appendChild(el);
+    });
+
+    config.zones.forEach((z, idx) => {
+        const zone = document.createElement("div");
+        zone.className = "zone";
+        zone.style.top = z.top + "%";
+        zone.style.left = z.left + "%";
+        zone.style.width = z.width + "%";
+        zone.style.height = z.height + "%";
+        zone.style.transform = `rotate(${z.rotation || 0}deg)`;
+        zone.style.backgroundColor = hexToRgba(z.couleur || "#ffffff", 0.55);
+        
+        zone.dataset.reponse = z.reponse;
+        zone.dataset.idx = idx;
+
+        const title = document.createElement("span");
+        title.className = "zone-title";
+        title.textContent = estModeProf() ? z.reponse : "";
+        zone.appendChild(title);
+
+        const imgContainer = document.createElement("div");
+        imgContainer.className = "zone-images";
+        zone.appendChild(imgContainer);
+
+        if (estModeProf()) rendreZoneEditable(zone, z);
+
+        carte.appendChild(zone);
+    });
+
+    if (!estModeProf()) chargerEcouteursDrop();
+}
+
+function positionnerLigne(el, x1, y1, x2, y2) {
+    const rectCarte = carte.getBoundingClientRect();
+    const widthCarte = rectCarte.width || 800;
+    const heightCarte = rectCarte.height || 500;
+
+    const p1x = (x1 / 100) * widthCarte;
+    const p1y = (y1 / 100) * heightCarte;
+    const p2x = (x2 / 100) * widthCarte;
+    const p2y = (y2 / 100) * heightCarte;
+
+    const length = Math.hypot(p2x - p1x, p2y - p1y);
+    const angle = Math.atan2(p2y - p1y, p2x - p1x) * (180 / Math.PI);
+
+    el.style.left = x1 + "%";
+    el.style.top = y1 + "%";
+    el.style.width = (length / widthCarte * 100) + "%";
+    el.style.transform = `rotate(${angle}deg)`;
+}
+
+function creerEtiquettesDOM() {
+    conteneurEtiquettes.innerHTML = "";
+    
+    let totalElements = config.elements.length + config.images.length;
+    document.getElementById("total").textContent = totalElements;
+
+    config.ordreItems.forEach((ref) => {
+        const [type, val] = ref.split(":");
+
+        if (type === "texte") {
+            const elData = config.elements.find(e => e.nom === val);
+            if (!elData) return;
+
+            const div = document.createElement("div");
+            div.className = "etiquette";
+            div.textContent = elData.nom;
+            div.dataset.type = "texte";
+            div.dataset.valeur = elData.nom;
+            div.dataset.reponse = elData.reponse;
+
+            rendreDraggable(div);
+            conteneurEtiquettes.appendChild(div);
+        } else if (type === "image") {
+            const imgData = config.images.find(i => i.id === val);
+            if (!imgData || imgData.placee) return;
+
+            const div = document.createElement("div");
+            div.className = "etiquette image-etiquette";
+            div.dataset.type = "image";
+            div.dataset.valeur = imgData.id;
+            div.dataset.reponse = imgData.reponse;
+
+            div.innerHTML = `<img src="${imgData.src}" alt=""><span>${imgData.nom}</span>`;
+
+            rendreDraggable(div);
+            conteneurEtiquettes.appendChild(div);
+        }
+    });
+}
+
+let itemEnCours = null;
+let cloneTactile = null;
+
+function rendreDraggable(elem) {
+    elem.setAttribute("draggable", "true");
+
+    elem.addEventListener("dragstart", (e) => {
+        itemEnCours = elem;
+        elem.classList.add("dragging");
+        e.dataTransfer.setData("text/plain", elem.dataset.valeur);
+    });
+
+    elem.addEventListener("dragend", () => {
+        elem.classList.remove("dragging");
+        itemEnCours = null;
+    });
+
+    elem.addEventListener("touchstart", (e) => {
+        itemEnCours = elem;
+        const touch = e.touches[0];
+        
+        cloneTactile = elem.cloneNode(true);
+        cloneTactile.style.position = "fixed";
+        cloneTactile.style.left = (touch.clientX - 40) + "px";
+        cloneTactile.style.top = (touch.clientY - 20) + "px";
+        cloneTactile.style.width = elem.offsetWidth + "px";
+        cloneTactile.style.opacity = "0.85";
+        cloneTactile.style.pointerEvents = "none";
+        cloneTactile.style.zIndex = "1000";
+        document.body.appendChild(cloneTactile);
+
+        elem.classList.add("dragging");
+    }, { passive: true });
+
+    elem.addEventListener("touchmove", (e) => {
+        if (!cloneTactile) return;
+        const touch = e.touches[0];
+        cloneTactile.style.left = (touch.clientX - 40) + "px";
+        cloneTactile.style.top = (touch.clientY - 20) + "px";
+
+        const cible = document.elementFromPoint(touch.clientX, touch.clientY);
+        const zone = cible ? cible.closest(".zone") : null;
+
+        document.querySelectorAll(".zone").forEach(z => z.classList.remove("drag-over"));
+        if (zone) zone.classList.add("drag-over");
+    }, { passive: true });
+
+    elem.addEventListener("touchend", (e) => {
+        if (cloneTactile) {
+            cloneTactile.remove();
+            cloneTactile = null;
+        }
+
+        elem.classList.remove("dragging");
+
+        const touch = e.changedTouches[0];
+        const cible = document.elementFromPoint(touch.clientX, touch.clientY);
+        const zone = cible ? cible.closest(".zone") : null;
+
+        document.querySelectorAll(".zone").forEach(z => z.classList.remove("drag-over"));
+
+        if (zone && itemEnCours) {
+            validerDrop(itemEnCours, zone);
+        }
+        itemEnCours = null;
+    });
+}
+
+function chargerEcouteursDrop() {
+    document.querySelectorAll(".zone").forEach(zone => {
+        zone.addEventListener("dragover", (e) => {
+            e.preventDefault();
+            zone.classList.add("drag-over");
+        });
+
+        zone.addEventListener("dragleave", () => {
+            zone.classList.remove("drag-over");
+        });
+
+        zone.addEventListener("drop", (e) => {
+            e.preventDefault();
+            zone.classList.remove("drag-over");
+            if (itemEnCours) {
+                validerDrop(itemEnCours, zone);
+            }
+        });
+    });
+}
+
+function validerDrop(item, zone) {
+    const cibleReponse = zone.dataset.reponse;
+    const itemReponse = item.dataset.reponse;
+
+    if (itemReponse === cibleReponse) {
+        const type = item.dataset.type;
+
+        if (type === "texte") {
+            const titleSpan = zone.querySelector(".zone-title");
+            titleSpan.textContent = item.dataset.valeur;
+            zone.classList.add("correct");
+        } else if (type === "image") {
+            const imgData = config.images.find(i => i.id === item.dataset.valeur);
+            if (imgData) {
+                imgData.placee = true;
+                const img = document.createElement("img");
+                img.className = "zone-image";
+                img.src = imgData.src;
+                zone.querySelector(".zone-images").appendChild(img);
+            }
+        }
+
+        item.remove();
+        score++;
+        document.getElementById("score").textContent = score;
+
+        const total = config.elements.length + config.images.length;
+        if (score === total && total > 0) {
+            document.getElementById("message").textContent = "🎉 Bravo ! Tu as complété la carte !";
+        }
+    }
+}
+
+function resetGame() {
+    initJeu();
+}
+
+function estModeProf() {
+    return document.body.classList.contains("mode-prof");
+}
+
+function ouvrirProfesseur() {
+    document.body.classList.add("mode-prof");
+    document.getElementById("professeur").style.display = "block";
+    document.getElementById("btn-prof").style.display = "none";
+    document.getElementById("btn-eleve").style.display = "block";
+
+    creerZonesDOM();
+    afficherInterfaceProf();
+}
+
+function revenirModeEleve() {
+    document.body.classList.remove("mode-prof");
+    document.getElementById("professeur").style.display = "none";
+    document.getElementById("btn-prof").style.display = "block";
+    document.getElementById("btn-eleve").style.display = "none";
+
+    sauvegarderLocale();
+    initJeu();
+}
+
+function sauvegarderEtFermer() {
+    sauvegarderLocale();
+    revenirModeEleve();
+    alert("Modifications enregistrées !");
+}
+
+function resetConfiguration() {
+    if (confirm("Rétablir la configuration par défaut ?")) {
+        localStorage.removeItem("commerceTriangulaireConfig");
+        config = JSON.parse(JSON.stringify(CONFIG_DEFAUT));
+        nettoyerEtSynchroOrdre();
+        revenirModeEleve();
+    }
+}
+
+function rendreZoneEditable(zone, data) {
+    let isMoving = false, isResizing = false, isRotating = false;
+    let startX, startY, startW, startH, startTop, startLeft;
+
+    const resizer = document.createElement("div");
+    resizer.className = "resize-handle";
+    zone.appendChild(resizer);
+
+    const rotator = document.createElement("div");
+    rotator.className = "rotate-handle";
+    zone.appendChild(rotator);
+
+    const onPointerMove = (e) => {
+        const rectCarte = carte.getBoundingClientRect();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        if (isMoving) {
+            let leftPercent = ((clientX - startX) / rectCarte.width) * 100 + startLeft;
+            let topPercent = ((clientY - startY) / rectCarte.height) * 100 + startTop;
+            zone.style.left = Math.max(0, Math.min(90, leftPercent)) + "%";
+            zone.style.top = Math.max(0, Math.min(90, topPercent)) + "%";
+            data.left = Math.round(leftPercent);
+            data.top = Math.round(topPercent);
+        } else if (isResizing) {
+            let widthPercent = ((clientX - startX) / rectCarte.width) * 100 + startW;
+            let heightPercent = ((clientY - startY) / rectCarte.height) * 100 + startH;
+            zone.style.width = Math.max(5, widthPercent) + "%";
+            zone.style.height = Math.max(5, heightPercent) + "%";
+            data.width = Math.round(widthPercent);
+            data.height = Math.round(heightPercent);
+        } else if (isRotating) {
+            const rectZone = zone.getBoundingClientRect();
+            const centerX = rectZone.left + rectZone.width / 2;
+            const centerY = rectZone.top + rectZone.height / 2;
+            
+            const rad = Math.atan2(clientY - centerY, clientX - centerX);
+            let deg = Math.round(rad * (180 / Math.PI)) + 90;
+            if (deg < 0) deg += 360;
+
+            zone.style.transform = `rotate(${deg}deg)`;
+            data.rotation = deg;
+        }
+    };
+
+    const onPointerUp = () => {
+        isMoving = isResizing = isRotating = false;
+        window.removeEventListener("mousemove", onPointerMove);
+        window.removeEventListener("mouseup", onPointerUp);
+        window.removeEventListener("touchmove", onPointerMove);
+        window.removeEventListener("touchend", onPointerUp);
+    };
+
+    const startAction = (e, action) => {
+        e.stopPropagation();
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        startX = clientX; startY = clientY;
+        startW = parseFloat(zone.style.width);
+        startH = parseFloat(zone.style.height);
+        startLeft = parseFloat(zone.style.left);
+        startTop = parseFloat(zone.style.top);
+
+        if (action === "move") isMoving = true;
+        if (action === "resize") isResizing = true;
+        if (action === "rotate") isRotating = true;
+
+        window.addEventListener("mousemove", onPointerMove);
+        window.addEventListener("mouseup", onPointerUp);
+        window.addEventListener("touchmove", onPointerMove, { passive: false });
+        window.addEventListener("touchend", onPointerUp);
+    };
+
+    zone.addEventListener("mousedown", (e) => { if(e.target === zone || e.target.classList.contains("zone-title")) startAction(e, "move"); });
+    zone.addEventListener("touchstart", (e) => { if(e.target === zone || e.target.classList.contains("zone-title")) startAction(e, "move"); });
+    resizer.addEventListener("mousedown", (e) => startAction(e, "resize"));
+    resizer.addEventListener("touchstart", (e) => startAction(e, "resize"));
+    rotator.addEventListener("mousedown", (e) => startAction(e, "rotate"));
+    rotator.addEventListener("touchstart", (e) => startAction(e, "rotate"));
+}
+
+function rendreLiaisonEditable(el, data) {
+    const handle1 = document.createElement("div");
+    handle1.className = "handle-endpoint handle-start";
+    const handle2 = document.createElement("div");
+    handle2.className = "handle-endpoint handle-end";
+
+    el.appendChild(handle1);
+    el.appendChild(handle2);
+
+    // Déplacement global de la flèche
+    let isMovingArrow = false;
+    let startX, startY, initX1, initY1, initX2, initY2;
+
+    const startMoveArrow = (e) => {
+        if (e.target.classList.contains("handle-endpoint")) return;
+        e.stopPropagation();
+        isMovingArrow = true;
+        const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+        const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+        startX = clientX;
+        startY = clientY;
+        initX1 = data.x1; initY1 = data.y1;
+        initX2 = data.x2; initY2 = data.y2;
+
+        const onMove = (evt) => {
+            if (!isMovingArrow) return;
+            const rectCarte = carte.getBoundingClientRect();
+            const currX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+            const currY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+
+            const dx = ((currX - startX) / rectCarte.width) * 100;
+            const dy = ((currY - startY) / rectCarte.height) * 100;
+
+            data.x1 = Math.round(Math.max(0, Math.min(100, initX1 + dx)));
+            data.y1 = Math.round(Math.max(0, Math.min(100, initY1 + dy)));
+            data.x2 = Math.round(Math.max(0, Math.min(100, initX2 + dx)));
+            data.y2 = Math.round(Math.max(0, Math.min(100, initY2 + dy)));
+
+            positionnerLigne(el, data.x1, data.y1, data.x2, data.y2);
+        };
+
+        const onUp = () => {
+            isMovingArrow = false;
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+            window.removeEventListener("touchmove", onMove);
+            window.removeEventListener("touchend", onUp);
+        };
+
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+        window.addEventListener("touchmove", onMove, { passive: false });
+        window.addEventListener("touchend", onUp);
+    };
+
+    el.addEventListener("mousedown", startMoveArrow);
+    el.addEventListener("touchstart", startMoveArrow);
+
+    // Ajustement des extrémités (pivot + taille)
+    const initDragEndpoint = (e, point) => {
+        e.stopPropagation();
+        
+        const onMove = (evt) => {
+            const rectCarte = carte.getBoundingClientRect();
+            const clientX = evt.touches ? evt.touches[0].clientX : evt.clientX;
+            const clientY = evt.touches ? evt.touches[0].clientY : evt.clientY;
+
+            let x = Math.max(0, Math.min(100, ((clientX - rectCarte.left) / rectCarte.width) * 100));
+            let y = Math.max(0, Math.min(100, ((clientY - rectCarte.top) / rectCarte.height) * 100));
+
+            if (point === 1) {
+                data.x1 = Math.round(x);
+                data.y1 = Math.round(y);
+            } else {
+                data.x2 = Math.round(x);
+                data.y2 = Math.round(y);
+            }
+
+            positionnerLigne(el, data.x1, data.y1, data.x2, data.y2);
+        };
+
+        const onUp = () => {
+            window.removeEventListener("mousemove", onMove);
+            window.removeEventListener("mouseup", onUp);
+            window.removeEventListener("touchmove", onMove);
+            window.removeEventListener("touchend", onUp);
+        };
+
+        window.addEventListener("mousemove", onMove);
+        window.addEventListener("mouseup", onUp);
+        window.addEventListener("touchmove", onMove, { passive: false });
+        window.addEventListener("touchend", onUp);
+    };
+
+    handle1.addEventListener("mousedown", (e) => initDragEndpoint(e, 1));
+    handle1.addEventListener("touchstart", (e) => initDragEndpoint(e, 1));
+    handle2.addEventListener("mousedown", (e) => initDragEndpoint(e, 2));
+    handle2.addEventListener("touchstart", (e) => initDragEndpoint(e, 2));
+}
+
+function afficherInterfaceProf() {
+    const divZones = document.getElementById("gestionZones");
+    divZones.innerHTML = "";
+
+    config.zones.forEach((z, idx) => {
+        const row = document.createElement("div");
+        row.className = "prof-row";
+        row.innerHTML = `
+            <span>Zone ${idx+1} :</span>
+            <input type="text" value="${z.reponse}" placeholder="Nom / Réponse attendue" onchange="modifierZoneReponse(${idx}, this.value)">
+            <input type="color" value="${z.couleur || '#ffffff'}" title="Couleur de fond" onchange="modifierZoneCouleur(${idx}, this.value)">
+            <button type="button" class="btn-danger" style="width:auto;" onclick="supprimerZone(${idx})">🗑️</button>
+        `;
+        divZones.appendChild(row);
+    });
+
+    const divElements = document.getElementById("gestionElements");
+    divElements.innerHTML = "";
+    config.elements.forEach((el, idx) => {
+        const row = document.createElement("div");
+        row.className = "prof-row";
+        row.innerHTML = `
+            <input type="text" value="${el.nom}" placeholder="Nom affiché" onchange="modifierElementNom(${idx}, this.value)">
+            <select onchange="modifierElementReponse(${idx}, this.value)">
+                ${config.zones.map(z => `<option value="${z.reponse}" ${z.reponse === el.reponse ? 'selected':''}>Associer à : ${z.reponse}</option>`).join('')}
+            </select>
+            <button type="button" class="btn-danger" style="width:auto;" onclick="supprimerElementTexte(${idx})">🗑️</button>
+        `;
+        divElements.appendChild(row);
+    });
+
+    const divImages = document.getElementById("gestionImages");
+    divImages.innerHTML = "";
+    config.images.forEach((img, idx) => {
+        const row = document.createElement("div");
+        row.className = "prof-row";
+        row.innerHTML = `
+            <img src="${img.src}" style="width:30px; height:30px; object-fit:contain;">
+            <input type="text" value="${img.nom}" placeholder="Titre image" onchange="modifierImageNom(${idx}, this.value)">
+            <select onchange="modifierImageReponse(${idx}, this.value)">
+                ${config.zones.map(z => `<option value="${z.reponse}" ${z.reponse === img.reponse ? 'selected':''}>Associer à : ${z.reponse}</option>`).join('')}
+            </select>
+            <button type="button" class="btn-danger" style="width:auto;" onclick="supprimerImage(${idx})">🗑️</button>
+        `;
+        divImages.appendChild(row);
+    });
+
+    afficherGestionOrdre();
+}
+
+function modifierZoneReponse(idx, value) {
+    config.zones[idx].reponse = value;
+    creerZonesDOM();
+}
+
+function modifierZoneCouleur(idx, value) {
+    config.zones[idx].couleur = value;
+    creerZonesDOM();
+}
+
+function ajouterZone() {
+    const id = "z" + (Date.now());
+    config.zones.push({
+        id: id,
+        reponse: "Nouvelle zone",
+        top: 30, left: 30, width: 20, height: 12, rotation: 0, couleur: "#ffffff"
+    });
+    creerZonesDOM();
+    afficherInterfaceProf();
+}
+
+function supprimerZone(idx) {
+    config.zones.splice(idx, 1);
+    creerZonesDOM();
+    afficherInterfaceProf();
+}
+
+function ajouterLiaison() {
+    config.liaisons.push({ x1: 20, y1: 20, x2: 40, y2: 40 });
+    creerZonesDOM();
+}
+
+function modifierElementNom(idx, val) {
+    const oldNom = config.elements[idx].nom;
+    config.elements[idx].nom = val;
+    const refIdx = config.ordreItems.indexOf("texte:" + oldNom);
+    if (refIdx !== -1) config.ordreItems[refIdx] = "texte:" + val;
+    afficherInterfaceProf();
+}
+
+function modifierElementReponse(idx, val) {
+    config.elements[idx].reponse = val;
+}
+
+function ajouterElementTexte() {
+    const nom = "Élément " + (config.elements.length + 1);
+    const reponse = config.zones.length > 0 ? config.zones[0].reponse : "";
+    config.elements.push({ nom: nom, reponse: reponse });
+    nettoyerEtSynchroOrdre();
+    afficherInterfaceProf();
+}
+
+function supprimerElementTexte(idx) {
+    config.elements.splice(idx, 1);
+    nettoyerEtSynchroOrdre();
+    afficherInterfaceProf();
+}
+
+function importerImagesFichiers(files) {
+    Array.from(files).forEach((f, i) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const id = "img_" + Date.now() + "_" + i;
+            config.images.push({
+                id: id,
+                nom: f.name.split('.')[0],
+                src: e.target.result,
+                reponse: config.zones.length > 0 ? config.zones[0].reponse : "",
+                placee: false
+            });
+            nettoyerEtSynchroOrdre();
+            afficherInterfaceProf();
+        };
+        reader.readAsDataURL(f);
+    });
+}
+
+function modifierImageNom(idx, val) {
+    config.images[idx].nom = val;
+}
+
+function modifierImageReponse(idx, val) {
+    config.images[idx].reponse = val;
+}
+
+function supprimerImage(idx) {
+    config.images.splice(idx, 1);
+    nettoyerEtSynchroOrdre();
+    afficherInterfaceProf();
+}
+
+function afficherGestionOrdre() {
+    const div = document.getElementById("gestionOrdre");
+    div.innerHTML = "";
+
+    config.ordreItems.forEach((ref, idx) => {
+        const [type, val] = ref.split(":");
+        let label = "";
+        if (type === "texte") label = "📝 " + val;
+        if (type === "image") {
+            const img = config.images.find(i => i.id === val);
+            label = "🖼️ " + (img ? img.nom : val);
+        }
+
+        const item = document.createElement("div");
+        item.className = "ordre-item";
+        item.innerHTML = `
+            <span style="flex:1;">${label}</span>
+            <button type="button" style="width:auto; padding:4px 8px;" onclick="deplacerOrdre(${idx}, -1)" ${idx === 0 ? 'disabled':''}>⬆️</button>
+            <button type="button" style="width:auto; padding:4px 8px;" onclick="deplacerOrdre(${idx}, 1)" ${idx === config.ordreItems.length - 1 ? 'disabled':''}>⬇️</button>
+        `;
+        div.appendChild(item);
+    });
+}
+
+function deplacerOrdre(idx, sens) {
+    const n = idx + sens;
+    if (n < 0 || n >= config.ordreItems.length) return;
+    const temp = config.ordreItems[idx];
+    config.ordreItems[idx] = config.ordreItems[n];
+    config.ordreItems[n] = temp;
+    afficherGestionOrdre();
+}
+
+function exporterCodeSource() {
+    const code = "<!DOCTYPE html>\n" + document.documentElement.outerHTML;
+    const blob = new Blob([code], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "index.html";
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+// Initialisation au chargement de la page
+window.addEventListener("DOMContentLoaded", () => {
+    chargerConfiguration();
+    initJeu();
+});
+</script>
+
+</body>
+</html>
